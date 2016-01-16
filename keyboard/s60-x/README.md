@@ -18,10 +18,14 @@ To build firmware binary hex file with a certain keymap just do `make` with `KEY
     $ make KEYMAP=[custom|poker|poker_set|poker_bit|plain|hasu|spacefn|hhkb|<name>]
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 File S60-X_lufa.hex.old is a testing firmware to confirm that all possible switch positions are working on the PCB. It has the layout shown on [keymap_custom.c](keymap_custom.c).
 =======
 File [S60-X_pre-built_firmwares.zip](S60-X_pre-built_firmwares.zip) contains pre-compiled firmwares for all keymaps available. The only tested firmware is 'custom', as it is a testing firmware to confirm that all possible switch positions are working on the PCB. It has the layout shown on [keymap_custom.c](keymap_custom.c).
 >>>>>>> Correcting typos on README
+=======
+File [S60-X_pre-compiled_firmwares.zip](S60-X_pre-compiled_firmwares.zip) contains pre-compiled firmwares for all keymaps available. Not all of them are tested.
+>>>>>>> Corrected bug on ISO keymap.
 
 
 ### 0  Initial explanations
