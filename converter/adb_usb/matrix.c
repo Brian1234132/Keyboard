@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 
+static bool has_media_keys = false;
 static bool is_iso_layout = false;
 static bool is_modified = false;
 static report_mouse_t mouse_report = {};
@@ -70,14 +71,27 @@ uint8_t matrix_cols(void)
 
 void matrix_init(void)
 {
+    // LED on
+    DDRD |= (1<<6); PORTD |= (1<<6);
+
     adb_host_init();
     // wait for keyboard to boot up and receive command
-    _delay_ms(1000);
+    _delay_ms(2000);
 
-    // Determine ISO keyboard by handle id
+    // device scan
+    xprintf("Before init:\n");
+    for (uint8_t addr = 1; addr < 16; addr++) {
+        uint16_t reg3 = adb_host_talk(addr, ADB_REG_3);
+        if (reg3) {
+            xprintf("Scan: addr:%d, reg3:%04X\n", addr, reg3);
+        }
+        _delay_ms(20);
+    }
+
+    // Determine ISO keyboard by handler id
     // http://lxr.free-electrons.com/source/drivers/macintosh/adbhid.c?v=4.4#L815
-    uint16_t handle_id = adb_host_talk(ADB_ADDR_KEYBOARD, 3);
-    switch (handle_id) {
+    uint16_t handler_id = adb_host_talk(ADB_ADDR_KEYBOARD, ADB_REG_3);
+    switch (handler_id) {
     case 0x04: case 0x05: case 0x07: case 0x09: case 0x0D:
     case 0x11: case 0x14: case 0x19: case 0x1D: case 0xC1:
     case 0xC4: case 0xC7:
@@ -88,11 +102,27 @@ void matrix_init(void)
         break;
     }
 
+    // Adjustable keyboard media keys: address=0x07 and handlerID=0x02
+    has_media_keys = (0x02 == (adb_host_talk(ADB_ADDR_APPLIANCE, ADB_REG_3) & 0xff));
+    if (has_media_keys) {
+        xprintf("Found: media keys\n");
+    }
+
     // Enable keyboard left/right modifier distinction
-    // Addr:Keyboard(0010), Cmd:Listen(10), Register3(11)
-    // upper byte: reserved bits 0000, device address 0010
-    // lower byte: device handler 00000011
-    adb_host_listen(0x2B,0x02,0x03);
+    // Listen Register3
+    //  upper byte: reserved bits 0000, keyboard address 0010
+    //  lower byte: device handler 00000011
+    adb_host_listen(ADB_ADDR_KEYBOARD, ADB_REG_3, ADB_ADDR_KEYBOARD, ADB_HANDLER_EXTENDED_PROTOCOL);
+
+    // device scan
+    xprintf("After init:\n");
+    for (uint8_t addr = 1; addr < 16; addr++) {
+        uint16_t reg3 = adb_host_talk(addr, ADB_REG_3);
+        if (reg3) {
+            xprintf("Scan: addr:%d, reg3:%04X\n", addr, reg3);
+        }
+        _delay_ms(20);
+    }
 
     // initialize matrix state: all keys off
     for (uint8_t i=0; i < MATRIX_ROWS; i++) matrix[i] = 0x00;
@@ -103,14 +133,8 @@ void matrix_init(void)
     //debug_mouse = true;
     print("debug enabled.\n");
 
-    // LED flash
-    DDRD |= (1<<6); PORTD |= (1<<6);
-    _delay_ms(500);
+    // LED off
     DDRD |= (1<<6); PORTD &= ~(1<<6);
-
-    uint16_t handle_id2 = adb_host_talk(ADB_ADDR_KEYBOARD, 3);
-    xprintf("handle_id: %02X -> %02X\n", handle_id&0xff, handle_id2&0xff);
-
     return;
 }
 
@@ -192,7 +216,50 @@ uint8_t matrix_scan(void)
     if ( codes == 0xFFFF )
     {
         _delay_ms(12);  // delay for preventing overload of poor ADB keyboard controller
-        codes = adb_host_kbd_recv();
+        codes = adb_host_kbd_recv(ADB_ADDR_KEYBOARD);
+
+        // Adjustable keybaord media keys
+        if (codes == 0 && has_media_keys &&
+                (codes = adb_host_kbd_recv(ADB_ADDR_APPLIANCE))) {
+            // key1
+            switch (codes & 0x7f ) {
+            case 0x00:  // Mic
+                codes = (codes & ~0x007f) | 0x42;
+                break;
+            case 0x01:  // Mute
+                codes = (codes & ~0x007f) | 0x4a;
+                break;
+            case 0x02:  // Volume down
+                codes = (codes & ~0x007f) | 0x49;
+                break;
+            case 0x03:  // Volume Up
+                codes = (codes & ~0x007f) | 0x48;
+                break;
+            case 0x7F:  // no code
+                break;
+            default:
+                xprintf("ERROR: media key1\n");
+                return 0x11;
+            }
+            // key0
+            switch ((codes >> 8) & 0x7f ) {
+            case 0x00:  // Mic
+                codes = (codes & ~0x7f00) | (0x42 << 8);
+                break;
+            case 0x01:  // Mute
+                codes = (codes & ~0x7f00) | (0x4a << 8);
+                break;
+            case 0x02:  // Volume down
+                codes = (codes & ~0x7f00) | (0x49 << 8);
+                break;
+            case 0x03:  // Volume Up
+                codes = (codes & ~0x7f00) | (0x48 << 8);
+                break;
+            default:
+                xprintf("ERROR: media key0\n");
+                return 0x10;
+            }
+        }
     }
     key0 = codes>>8;
     key1 = codes&0xFF;
@@ -214,6 +281,7 @@ uint8_t matrix_scan(void)
         return key1;
     } else {
         /* Swap codes for ISO keyboard
+         * https://github.com/tmk/tmk_keyboard/issues/35
          *
          * ANSI
          * ,-----------    ----------.
@@ -246,10 +314,10 @@ uint8_t matrix_scan(void)
          * *c      0x2A    0x2A    0x31    0x31(or 0x32)
          */
         if (is_iso_layout) {
-            if (key0 == 0x32) {
-                key0 = 0x0A;
-            } else if (key0 == 0x0A) {
-                key0 = 0x32;
+            if ((key0 & 0x7F) == 0x32) {
+                key0 = (key0 & 0x80) | 0x0A;
+            } else if ((key0 & 0x7F) == 0x0A) {
+                key0 = (key0 & 0x80) | 0x32;
             }
         }
         register_key(key0);

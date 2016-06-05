@@ -1,5 +1,5 @@
 /*
-Copyright 2011 Jun Wako <wakojun@gmail.com>
+Copyright 2016 Ethan Apodaca <papodaca@gmail.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,13 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdint.h>
-#include <util/delay.h>
-#include "adb.h"
-#include "led.h"
-
-
-void led_set(uint8_t usb_led)
-{
-    adb_host_kbd_led(ADB_ADDR_KEYBOARD, ~usb_led);
+void led_set(uint8_t usb_led) {
+  //XT Keyboards do not have LEDs, nothing to do.
 }
